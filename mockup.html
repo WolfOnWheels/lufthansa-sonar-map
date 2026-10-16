@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sonar Map Display</title>
+<style>
+  :root {
+    --panel: rgba(6,16,40,.82);
+    --border: #23407e;
+    --text: #dbe4ff;
+    --plane: #ffd400;
+  }
+  html, body { margin: 0; height: 100%; background: #0b0f18; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; color: var(--text); }
+  /* Stage uses the photo's own pixel coordinates (2000 × 1125) and is scaled/cropped to the window */
+  #stage { position: absolute; left: 0; top: 0; width: 2000px; height: 1125px; transform-origin: 0 0; }
+  #stage img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  /* Visible screen area inside the bezel, measured on the photo */
+  #screen { position: absolute; left: 691px; top: 254px; width: 615px; height: 315px; overflow: hidden; background: #060d22; }
+  #screen iframe { position: absolute; left: 0; top: 0; width: 1920px; height: 984px; border: 0;
+    transform: scale(calc(615 / 1920)); transform-origin: 0 0; }
+  /* faint glass reflection so the map sits "behind" the screen surface */
+  #glare { position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(115deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,.02) 38%, rgba(255,255,255,0) 39%, rgba(255,255,255,0) 100%); }
+
+  #controls { position: fixed; right: 16px; bottom: 16px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; width: 200px; font-size: 12px; backdrop-filter: blur(6px); }
+  #controls button { width: 100%; background: #0f2148; color: var(--text); border: 1px solid var(--border); border-radius: 5px;
+    padding: 6px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 4px; }
+  #controls button:hover:not(:disabled) { color: var(--plane); }
+  #controls button:disabled { opacity: .5; cursor: default; }
+  .vol { display: grid; grid-template-columns: 10px 1fr 26px; gap: 6px; align-items: center; margin-bottom: 4px; }
+  .vol i { width: 8px; height: 8px; border-radius: 50%; }
+  .vol input { grid-column: 2 / 4; width: 100%; accent-color: var(--plane); margin: 0; }
+  .vol output { text-align: right; opacity: .8; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <img src="mockup/airport.jpg" alt="Airport departure lounge with a freestanding digital display">
+  <div id="screen">
+    <iframe id="display" src="index.html?display" allow="autoplay" title="Lufthansa sonar map"></iframe>
+    <div id="glare"></div>
+  </div>
+</div>
+
+<div id="controls">
+  <div class="vol"><i style="background:#ffd400"></i><span>Ground</span><output id="o-ground">80</output>
+    <input type="range" min="0" max="100" value="80" data-id="ground" aria-label="Ground layer volume"></div>
+  <div class="vol"><i style="background:#a3e635"></i><span>Between</span><output id="o-between">80</output>
+    <input type="range" min="0" max="100" value="80" data-id="between" aria-label="Between layer volume"></div>
+  <div class="vol"><i style="background:#4fe3ff"></i><span>Air</span><output id="o-air">80</output>
+    <input type="range" min="0" max="100" value="80" data-id="air" aria-label="Air layer volume"></div>
+  <button id="play" disabled>Loading audio…</button>
+</div>
+
+<script>
+// Crop: show 1/ZOOM of the photo, centred on the screen, always covering the window
+const IMG_W = 2000, IMG_H = 1125, ZOOM = 1.5;
+const FOCUS = [998, 440]; // a little below the screen centre, so the stand stays in view
+const stage = document.getElementById("stage");
+function fit() {
+  const s = Math.max(innerWidth / (IMG_W / ZOOM), innerHeight / (IMG_H / ZOOM));
+  let x = innerWidth / 2 - FOCUS[0] * s, y = innerHeight / 2 - FOCUS[1] * s;
+  x = Math.min(0, Math.max(innerWidth - IMG_W * s, x)); // never show past the photo's edges
+  y = Math.min(0, Math.max(innerHeight - IMG_H * s, y));
+  stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+}
+addEventListener("resize", fit);
+fit();
+
+// Audio controls talk to the embedded map
+const frame = document.getElementById("display");
+const send = msg => frame.contentWindow.postMessage(msg, "*");
+const playBtn = document.getElementById("play");
+playBtn.onclick = () => send({ cmd: "toggle" });
+for (const input of document.querySelectorAll(".vol input")) {
+  input.addEventListener("input", () => {
+    document.getElementById(`o-${input.dataset.id}`).textContent = input.value;
+    send({ cmd: "volume", id: input.dataset.id, value: +input.value });
+  });
+}
+addEventListener("message", e => {
+  if (e.source !== frame.contentWindow || e.data?.type !== "sonar-state") return;
+  playBtn.disabled = !e.data.ready;
+  playBtn.textContent = !e.data.ready ? "Loading audio…" : e.data.playing ? "❚❚ Pause" : "▶ Play";
+});
+frame.addEventListener("load", () => send({ cmd: "state" }));
+</script>
+</body>
+</html>
