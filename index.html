@@ -13,7 +13,7 @@
   :root {
     --page: #060d22;
     --land: #0a1a3a;
-    --ocean: #0f2148;
+    --ocean: #142b5c;
     --coast: #1b3266;
     --grid: #13285a;
     --grid-label: #4f6aa5;
@@ -86,7 +86,10 @@
     opacity: 0; transition: opacity .25s ease-out; }
   #now.show { opacity: 1; }
   /* monospace: 7-char route (FRA:YYZ) at 5/7 size matches the width of a 5-char flight number */
-  #now div + div { font-size: calc(5em / 7); margin-top: .2em; }
+  #now { display: grid; grid-template-columns: auto auto; column-gap: .22em; align-items: baseline; }
+  #now-icon { grid-row: 1; width: .8em; height: .8em; align-self: center; }
+  #now-route { grid-column: 2; }
+  #now-route { font-size: calc(5em / 7); margin-top: .2em; }
   #tip { position: fixed; pointer-events: none; background: rgba(6,16,40,.95); border: 1px solid var(--plane);
     border-radius: 6px; padding: 6px 9px; font-size: 12px; display: none; white-space: nowrap; z-index: 10; }
 </style>
@@ -127,7 +130,7 @@
   <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
   <button id="zoom-reset" title="Reset view" aria-label="Reset view">⟲</button>
 </div>
-<div id="now" aria-live="polite"><div id="now-flight"></div><div id="now-route"></div></div>
+<div id="now" aria-live="polite"><svg id="now-icon" viewBox="0 0 24 24" aria-hidden="true"></svg><div id="now-flight"></div><div id="now-route"></div></div>
 <div id="tip"></div>
 
 <script>
@@ -148,7 +151,7 @@ const layerOf = d => LAYERS.find(l => (d.alt || 0) < l.max);
 
 // ---------- Map ----------
 const W = 1600, H = 800;
-const CELL = 1; // degrees per grid cell for the octilinear coastline
+const CELL = 0.25; // degrees per grid cell for the octilinear coastline
 const svg = d3.select("#map").attr("viewBox", `0 0 ${W} ${H}`).attr("preserveAspectRatio", "xMidYMid meet");
 const root = svg.append("g");
 const gMap = root.append("g");
@@ -170,7 +173,7 @@ for (let lat = -60; lat <= 90; lat += 30) {
 // Coastlines with straight and 45° diagonal segments only: rasterise the land onto a
 // lat/lng grid, then trace it with unsmoothed marching squares, whose segments always
 // join cell-edge midpoints (horizontal, vertical or exactly diagonal).
-d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-110m.json").then(world => {
+d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-50m.json").then(world => {
   const land = topojson.feature(world, world.objects.land);
   const GW = 360 / CELL, GH = 180 / CELL;
   const canvas = Object.assign(document.createElement("canvas"), { width: GW, height: GH });
@@ -197,7 +200,7 @@ const zoom = d3.zoom().scaleExtent([1, 20]).translateExtent([[0, 0], [W, H]]).on
 });
 // Start zoomed in on Europe; the reset button returns here
 const [ex, ey] = projection([12, 49]);
-const HOME = d3.zoomIdentity.translate(W / 2, H / 2).scale(4).translate(-ex, -ey);
+const HOME = d3.zoomIdentity.translate(W / 2, H / 2).scale(8).translate(-ex, -ey);
 svg.call(zoom).call(zoom.transform, HOME);
 d3.select("#zoom-in").on("click", () => svg.transition().duration(300).call(zoom.scaleBy, 2));
 d3.select("#zoom-out").on("click", () => svg.transition().duration(300).call(zoom.scaleBy, 0.5));
@@ -205,8 +208,8 @@ d3.select("#zoom-reset").on("click", () => svg.transition().duration(400).call(z
 
 // ---------- Flights ----------
 const PLANE = "M0,-5 L1,-1.5 L5,1 L5,2 L1,0.8 L0.7,3.5 L2,4.6 L2,5.3 L0,4.8 L-2,5.3 L-2,4.6 L-0.7,3.5 L-1,0.8 L-5,2 L-5,1 L-1,-1.5 Z";
-// Between-layer ring radius by altitude (m): 450 m → 6 px, 10,000 m → 28 px
-const ringR = alt => 6 + 22 * Math.sqrt(Math.min(Math.max(alt || 0, 0), 10000) / 10000);
+// Between-layer ring radius by altitude (m): 450 m → 9 px, 10,000 m → 42 px
+const ringR = alt => 1.5 * 6 + 1.5 * 22 * Math.sqrt(Math.min(Math.max(alt || 0, 0), 10000) / 10000);
 const GLOW_R = 25;
 const tip = d3.select("#tip");
 let flights = [];
@@ -293,12 +296,14 @@ const RING_GROW = 1.5;
 
 // Note times of the Between track, used when the page is opened straight from disk (file://),
 // where browsers block reading the audio data so the notes can't be detected on the fly.
-const BETWEEN_ONSETS_FALLBACK = [1.25, 6.0, 19.33, 33.07, 37.41];
+const BETWEEN_ONSETS_FALLBACK = [
+  { t: 1.25, dir: "dep" }, { t: 6.0, dir: "arr" }, { t: 19.33, dir: "dep" }, { t: 33.07, dir: "arr" }, { t: 37.41, dir: "dep" },
+];
 
 let onsets = [], loopLen = 0, lastPos = 0;
 const volumes = Object.fromEntries(LAYERS.map(l => [l.id, 0.8]));
 
-d3.select("#tracks").selectAll("div.track").data(LAYERS).join("div").attr("class", "track").html(l => `
+d3.select("#tracks").selectAll("div.track").data([...LAYERS].reverse()).join("div").attr("class", "track").html(l => `
   <span class="sw" style="background:${l.color};box-shadow:0 0 6px ${l.color}"></span>
   <span class="name">${l.label} <small>${l.range} · <span id="n-${l.id}">–</span> flights</small></span>
   <output id="v-${l.id}">80</output>
@@ -325,6 +330,25 @@ function detectOnsets(buffer) {
   return out;
 }
 
+// Label each note arrival or departure by pitch. The autocorrelation peak (over ~85 ms
+// after the attack) reads the D note lower than the F, but the D is heard as the higher
+// note, so the lower measured pitch is departure.
+function classifyNotes(buffer, times) {
+  const x = buffer.getChannelData(0), sr = buffer.sampleRate, N = 4096;
+  const pitches = times.map(t => {
+    const s = Math.floor((t + 0.08) * sr);
+    let best = -Infinity, lag = 1;
+    for (let L = Math.floor(sr / 1200); L <= Math.floor(sr / 40); L++) {
+      let c = 0;
+      for (let i = 0; i < N - L; i += 2) c += x[s + i] * x[s + i + L];
+      if (c > best) { best = c; lag = L; }
+    }
+    return sr / lag;
+  });
+  const mid = (Math.min(...pitches) + Math.max(...pitches)) / 2;
+  return times.map((t, i) => ({ t, dir: pitches[i] > mid ? "arr" : "dep", hz: Math.round(pitches[i]) }));
+}
+
 // Web Audio engine (served over http/https): sample-accurate sync, notes detected from the file.
 async function webAudioEngine() {
   const ctx = new AudioContext();
@@ -338,25 +362,31 @@ async function webAudioEngine() {
     gains[l.id].connect(ctx.destination);
   }
   loopLen = Math.min(...buffers.map(b => b.duration));
-  onsets = detectOnsets(buffers[LAYERS.findIndex(l => l.id === "between")]);
+  const betweenBuf = buffers[LAYERS.findIndex(l => l.id === "between")];
+  onsets = classifyNotes(betweenBuf, detectOnsets(betweenBuf));
   let startAt = null;
   return {
     async play() {
+      // schedule first, then resume: if the browser holds audio back until a click,
+      // the tracks simply start (still in sync) once the context is allowed to run
+      if (startAt === null) {
+        startAt = ctx.currentTime + 0.15;
+        LAYERS.forEach((l, i) => {
+          const src = ctx.createBufferSource();
+          src.buffer = buffers[i];
+          src.loop = true;
+          src.loopEnd = loopLen;
+          src.connect(gains[l.id]);
+          src.start(startAt);
+        });
+      }
       await ctx.resume();
-      if (startAt !== null) return;
-      startAt = ctx.currentTime + 0.15;
-      LAYERS.forEach((l, i) => {
-        const src = ctx.createBufferSource();
-        src.buffer = buffers[i];
-        src.loop = true;
-        src.loopEnd = loopLen;
-        src.connect(gains[l.id]);
-        src.start(startAt);
-      });
     },
     pause: () => ctx.suspend(),
     playing: () => startAt !== null && ctx.state === "running",
+    onChange(cb) { ctx.addEventListener("statechange", cb); },
     position() {
+      if (startAt === null) return null;
       const t = ctx.currentTime - startAt - (ctx.outputLatency || ctx.baseLatency || 0);
       return t < 0 ? null : t % loopLen;
     },
@@ -390,6 +420,7 @@ async function mediaElementEngine() {
     },
     pause() { for (const el of Object.values(els)) el.pause(); },
     playing: () => !master.paused,
+    onChange(cb) { master.addEventListener("play", cb); master.addEventListener("pause", cb); },
     position: () => master.currentTime,
     setVolume: (id, v) => { els[id].volume = v; },
     tick() {
@@ -408,9 +439,10 @@ const playBtn = document.getElementById("play");
   .then(e => {
     engine = e;
     playBtn.disabled = false;
-    playBtn.textContent = "▶ Play";
+    engine.onChange(updatePlayState);
+    updatePlayState();
     requestAnimationFrame(syncLoop);
-    postState();
+    autoplay();
   })
   .catch(e => { playBtn.textContent = "Audio failed to load"; d3.select("#err").text("Audio: " + e.message); });
 
@@ -423,14 +455,32 @@ for (const l of LAYERS) {
   });
 }
 
-playBtn.onclick = async () => {
-  if (engine.playing()) await engine.pause();
-  else {
-    lastPos = engine.position() ?? 0;
-    await engine.play();
-  }
+function updatePlayState() {
   playBtn.textContent = engine.playing() ? "❚❚ Pause" : "▶ Play";
   postState();
+}
+
+function startPlayback() {
+  lastPos = engine.position() ?? 0;
+  return engine.play().then(updatePlayState, () => {}); // blocked until a click/tap/key press
+}
+
+// Sound plays by default. Browsers only allow audio after the visitor interacts with the
+// page, so if playback is held back it starts on the first click, tap or key press.
+function autoplay() {
+  startPlayback();
+  const unlock = e => {
+    if (e.target.closest?.("#play")) return; // the Play button handles itself
+    if (!engine.playing()) startPlayback();
+    for (const ev of ["pointerdown", "keydown"]) removeEventListener(ev, unlock, true);
+  };
+  for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, unlock, true);
+}
+
+playBtn.onclick = async () => {
+  if (engine.playing()) await engine.pause();
+  else await startPlayback();
+  updatePlayState();
 };
 
 // Remote control from a parent page (mockup.html embeds this page in an iframe)
@@ -441,6 +491,7 @@ window.addEventListener("message", e => {
   if (e.source !== window.parent || !e.data) return;
   const { cmd, id, value } = e.data;
   if (cmd === "toggle" && engine) playBtn.onclick();
+  if (cmd === "play" && engine && !engine.playing()) startPlayback();
   if (cmd === "volume" && LAYERS.some(l => l.id === id)) {
     const input = document.getElementById(`vol-${id}`);
     input.value = value;
@@ -456,13 +507,13 @@ function syncLoop() {
   const pos = engine.position();
   if (pos === null) return;
   const crossed = pos >= lastPos
-    ? onsets.filter(o => o > lastPos && o <= pos)
-    : onsets.filter(o => o > lastPos || o <= pos); // wrapped around the loop
+    ? onsets.filter(o => o.t > lastPos && o.t <= pos)
+    : onsets.filter(o => o.t > lastPos || o.t <= pos); // wrapped around the loop
   lastPos = pos;
-  if (crossed.length) flashBetweenRings();
+  if (crossed.length) flashBetweenRings(crossed[crossed.length - 1].dir);
 }
 
-function flashBetweenRings() {
+function flashBetweenRings(dir) {
   const visible = gPlanes.selectAll("g.plane.between").nodes().filter(n => {
     const b = n.getBoundingClientRect();
     return b.right > 0 && b.bottom > 0 && b.left < innerWidth && b.top < innerHeight;
@@ -474,14 +525,26 @@ function flashBetweenRings() {
     { opacity: 1, transform: "scale(1.05)", offset: RING_FADE_IN_MS / (RING_FADE_IN_MS + RING_FADE_OUT_MS), easing: "ease-in-out" },
     { opacity: 0, transform: `scale(${RING_GROW})` },
   ], { duration: RING_FADE_IN_MS + RING_FADE_OUT_MS });
-  showFlight(d3.select(node).datum());
+  showFlight(d3.select(node).datum(), dir);
 }
 
 // Large flight number + route at the top left; stays until the next note replaces it
+// Departure / arrival pictograms after Otl Aicher's Munich 1972 airport signs: a side-view
+// aircraft climbing to the right (departure) or descending to the left with its gear down
+// (arrival), in solid white inside a white-outlined rounded box.
+const AIRCRAFT = `<path d="M2.6 12.6c.5-.7 1.4-1.2 2.6-1.2H19.4c1.9 0 3.4.5 3.9 1.2-.5.7-2 1.2-3.9 1.2H5.2c-1.2 0-2.1-.5-2.6-1.2z"/>
+  <path d="M2.4 12.2V8.4h1.7l2.4 3.4z"/>
+  <path d="M8.6 11.6 5.8 5.4h2.5l5.8 6.2z"/>`;
+const GEAR = `<circle cx="18.8" cy="15.3" r=".8"/><circle cx="10.6" cy="15" r=".8"/><circle cx="12.3" cy="15" r=".8"/>`;
+const icon = (plane, mirror) => `<rect x=".375" y=".375" width="23.25" height="23.25" rx="3.6" fill="none" stroke="currentColor" stroke-width=".75"/>
+  <g fill="currentColor" transform="translate(12 12.4) rotate(-22) scale(${mirror ? -0.86 : 0.86} 0.86) translate(-12.8 -11.2)">${plane}</g>`;
+const ICONS = { dep: icon(AIRCRAFT, false), arr: icon(AIRCRAFT + GEAR, true) };
+
 const nowEl = document.getElementById("now");
-function showFlight(d) {
+function showFlight(d, dir) {
   nowEl.classList.remove("show");
   setTimeout(() => {
+    document.getElementById("now-icon").innerHTML = ICONS[dir] || "";
     document.getElementById("now-flight").textContent = d.flight_iata || d.flight_icao;
     document.getElementById("now-route").textContent = `${d.dep_iata || "???"}:${d.arr_iata || "???"}`;
     nowEl.classList.add("show");

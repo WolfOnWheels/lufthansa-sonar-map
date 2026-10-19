@@ -46,19 +46,19 @@
 </div>
 
 <div id="controls">
-  <div class="vol"><i style="background:#ffd400"></i><span>Ground</span><output id="o-ground">80</output>
-    <input type="range" min="0" max="100" value="80" data-id="ground" aria-label="Ground layer volume"></div>
-  <div class="vol"><i style="background:#a3e635"></i><span>Between</span><output id="o-between">80</output>
-    <input type="range" min="0" max="100" value="80" data-id="between" aria-label="Between layer volume"></div>
   <div class="vol"><i style="background:#4fe3ff"></i><span>Air</span><output id="o-air">80</output>
     <input type="range" min="0" max="100" value="80" data-id="air" aria-label="Air layer volume"></div>
+  <div class="vol"><i style="background:#a3e635"></i><span>Between</span><output id="o-between">80</output>
+    <input type="range" min="0" max="100" value="80" data-id="between" aria-label="Between layer volume"></div>
+  <div class="vol"><i style="background:#ffd400"></i><span>Ground</span><output id="o-ground">80</output>
+    <input type="range" min="0" max="100" value="80" data-id="ground" aria-label="Ground layer volume"></div>
   <button id="play" disabled>Loading audio…</button>
 </div>
 
 <script>
 // Crop: show 1/ZOOM of the photo, centred on the screen, always covering the window
-const IMG_W = 2000, IMG_H = 1125, ZOOM = 1.5;
-const FOCUS = [998, 440]; // a little below the screen centre, so the stand stays in view
+const IMG_W = 2000, IMG_H = 1125, ZOOM = 2;
+const FOCUS = [998, 425]; // a little below the screen centre, so the stand stays in view
 const stage = document.getElementById("stage");
 function fit() {
   const s = Math.max(innerWidth / (IMG_W / ZOOM), innerHeight / (IMG_H / ZOOM));
@@ -87,6 +87,14 @@ addEventListener("message", e => {
   playBtn.textContent = !e.data.ready ? "Loading audio…" : e.data.playing ? "❚❚ Pause" : "▶ Play";
 });
 frame.addEventListener("load", () => send({ cmd: "state" }));
+
+// Sound plays by default; if the browser holds it back, the first click/tap/key anywhere starts it
+const unlock = e => {
+  if (e.target.closest?.("#controls")) return;
+  send({ cmd: "play" });
+  for (const ev of ["pointerdown", "keydown"]) removeEventListener(ev, unlock, true);
+};
+for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, unlock, true);
 </script>
 </body>
 </html>
