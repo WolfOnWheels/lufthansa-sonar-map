@@ -1,0 +1,81 @@
+/* Shared styles for index.html, map.html and panel.html */
+@font-face { font-family: "Lufthansa Head"; font-weight: 100; font-display: swap;
+  src: url(fonts/LufthansaHeadWeb-Thin.woff2) format("woff2"), url(fonts/LufthansaHeadWeb-Thin.woff) format("woff"); }
+@font-face { font-family: "Lufthansa Text"; font-weight: 400; font-display: swap;
+  src: url(fonts/LufthansaTextWeb-Regular.woff2) format("woff2"), url(fonts/LufthansaTextWeb-Regular.woff) format("woff"); }
+@font-face { font-family: "Lufthansa Text"; font-weight: 700; font-display: swap;
+  src: url(fonts/LufthansaTextWeb-Bold.woff2) format("woff2"), url(fonts/LufthansaTextWeb-Bold.woff) format("woff"); }
+
+:root {
+  --page: #060d22;
+  --land: #0a1a3a;
+  --ocean: #142b5c;
+  --coast: #1b3266;
+  --grid: #13285a;
+  --grid-label: #4f6aa5;
+  --panel: rgba(6,16,40,.88);
+  --border: #23407e;
+  --plane: #ffd400;
+  --text: #dbe4ff;
+  --muted: #8fa3cf;
+  --ground: #a3e635;
+  --between: #ffd400;
+  --air: #4fe3ff;
+}
+html, body { margin: 0; height: 100%; background: var(--page); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; overflow: hidden; }
+svg#map { display: block; width: 100vw; height: 100vh; cursor: grab; }
+svg#map:active { cursor: grabbing; }
+
+.ocean { fill: var(--ocean); }
+.land { fill: var(--land); stroke: var(--coast); stroke-width: 0.7; stroke-linejoin: miter; vector-effect: non-scaling-stroke; }
+.grid { fill: none; stroke: var(--grid); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+.grid-label { fill: var(--grid-label); font-size: 10px; }
+
+.plane .icon { fill: var(--plane); }
+.plane text { fill: var(--plane); font-size: 8px; font-weight: 600; letter-spacing: .02em; }
+.plane .hit { fill: transparent; cursor: pointer; }
+.plane .glow, .plane .ring { transform-box: fill-box; transform-origin: center; }
+/* All layers: slow "position light" glow; each plane gets its own phase */
+.plane .glow { display: none; animation: breathe 4.5s ease-in-out infinite; }
+.plane.ground .glow { display: inline; fill: url(#glow-ground); }
+.plane.between .glow { display: inline; fill: url(#glow-between); }
+.plane.air .glow { display: inline; fill: url(#glow-air); }
+@keyframes breathe {
+  0%, 100% { opacity: .08; transform: scale(.92); }
+  50%      { opacity: .5;  transform: scale(1.02); }
+}
+/* Between layer: rings, hidden until a note of the Between track fires */
+.plane .ring { display: none; opacity: 0; fill: color-mix(in srgb, var(--plane) 25%, transparent);
+  stroke: var(--plane); stroke-width: 0.7; }
+.plane.between .ring { display: inline; }
+
+.panel { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+button { background: var(--ocean); color: var(--text); border: 1px solid var(--border); border-radius: 5px;
+  padding: 4px 12px; font-size: 12px; cursor: pointer; }
+button:hover:not(:disabled) { color: var(--plane); }
+button:disabled { opacity: .5; cursor: default; }
+
+/* Zoom column (+, −, reset, and on map/panel pages play/pause) */
+#zoom { right: 16px; bottom: 16px; display: flex; flex-direction: column; overflow: hidden; }
+#zoom button { width: 36px; height: 36px; background: none; border: 0; border-radius: 0; padding: 0;
+  font-size: 20px; line-height: 1; }
+#zoom button + button { border-top: 1px solid var(--border); }
+#zoom #zoom-reset { font-size: 15px; }
+#zoom #play { font-size: 13px; }
+
+/* Flight picked by the latest Between note */
+#now { position: fixed; top: 20px; left: 28px; color: #fff; pointer-events: none;
+  font-family: "Lufthansa Head", sans-serif; font-weight: 100; line-height: 1.05;
+  font-size: clamp(36px, 7vw, 96px); text-shadow: 0 0 24px rgba(255, 255, 255, .25);
+  opacity: 0; transition: opacity .25s ease-out;
+  display: grid; grid-template-columns: auto auto; column-gap: .22em; align-items: baseline; }
+#now.show { opacity: 1; }
+#now-icon { grid-row: 1; width: .8em; height: .8em; align-self: center; }
+#now-route { grid-column: 2; margin-top: .2em; white-space: nowrap; } /* size set in JS to match a 5-char flight number */
+
+#tip { position: fixed; pointer-events: none; background: rgba(6,16,40,.95); border: 1px solid var(--plane);
+  border-radius: 6px; padding: 6px 9px; font-size: 12px; display: none; white-space: nowrap; z-index: 10; }
+
+/* ?display: screen-only mode for the mockup, controlled by the parent page */
+body.display #hud, body.display #zoom { display: none; }

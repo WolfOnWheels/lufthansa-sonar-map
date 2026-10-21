@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lufthansa Sonar Map</title>
+<link rel="stylesheet" href="sonar.css">
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+</head>
+<body>
+<!-- Map only: no flight info or info box; zoom controls with play/pause below reset -->
+<svg id="map"></svg>
+
+<div id="zoom" class="panel">
+  <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+  <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+  <button id="zoom-reset" title="Reset view" aria-label="Reset view">⟲</button>
+  <button id="play" class="icon" title="Loading audio…" aria-label="Loading audio" disabled>▶</button>
+</div>
+<div id="tip"></div>
+
+<script src="sonar.js"></script>
+</body>
+</html>

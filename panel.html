@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lufthansa Sonar Map · Info</title>
+<link rel="stylesheet" href="sonar.css">
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<style>
+  :root { --info-w: 300px; --gap: 16px; --bar-h: 44px; }
+  /* column of separate rounded boxes: header + one box per layer */
+  #info { position: fixed; top: var(--gap); right: var(--gap); max-height: calc(100vh - 2 * var(--gap)); width: var(--info-w);
+    display: flex; flex-direction: column; gap: 8px; overflow-y: auto;
+    font-family: "Lufthansa Text", sans-serif; font-weight: 400; color: var(--text); }
+  #info > header, #info > section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 18px; box-sizing: border-box; }
+  #info h2, #info h3 { font-weight: 700; margin: 0; }
+  #info h2 { font-size: 22px; color: #fff; }
+  #info .copy { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+  #info section { display: flex; flex-direction: column; }
+  #info h3 { font-size: 22px; color: #fff; display: flex; align-items: center; gap: 10px; }
+  #info h3 i { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  #info .count { margin-top: 10px; display: flex; align-items: baseline; gap: 8px; }
+  #info .count b { font-family: "Lufthansa Head", sans-serif; font-weight: 100; font-size: 72px; line-height: .9; color: #fff;
+    font-variant-numeric: tabular-nums; }
+  #info .count span { font-size: 13px; color: var(--muted); }
+  #info .rows { margin-top: 10px; display: grid; grid-template-columns: 22px 1fr auto; gap: 8px 10px; align-items: center; font-size: 14px; }
+  #info .rows svg { width: 22px; height: 22px; color: #fff; }
+  #info .rows b { font-weight: 400; color: #fff; font-size: 18px; font-variant-numeric: tabular-nums; }
+  #info .note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  #info #err { color: #ff8080; font-size: 12px; }
+  /* zoom + play controls: a horizontal bar attached right under the info boxes, same width */
+  #zoom { position: static; flex: none; width: 100%; height: var(--bar-h); box-sizing: border-box;
+    flex-direction: row; border-radius: 12px; }
+  #zoom button { flex: 1; height: 100%; }
+  #zoom button + button { border-top: 0; border-left: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<svg id="map"></svg>
+
+<aside id="info" aria-label="Flight information">
+  <header>
+    <h2>Lufthansa live flights</h2>
+    <div class="copy"><span id="count">–</span> aircraft airborne · updated <span id="updated">–</span></div>
+    <div id="err"></div>
+  </header>
+
+  <section>
+    <h3><i style="background:var(--air);box-shadow:0 0 8px var(--air)"></i>Air layer</h3>
+    <div class="copy">Cruising altitude above 10,000 m</div>
+    <div class="count"><b id="n-air">–</b><span>aircraft</span></div>
+  </section>
+
+  <section>
+    <h3><i style="background:var(--between);box-shadow:0 0 8px var(--between)"></i>Between layer</h3>
+    <div class="copy">Altitude 450 m to 10,000 m</div>
+    <div class="count"><b id="n-between">–</b><span>aircraft in total</span></div>
+    <div class="rows">
+      <svg viewBox="0 0 24 24" data-icon="dep" aria-hidden="true"></svg><span>Ascending</span><b id="n-asc">–</b>
+      <svg viewBox="0 0 24 24" data-icon="arr" aria-hidden="true"></svg><span>Descending</span><b id="n-desc">–</b>
+    </div>
+    <div class="note"><span id="n-level">–</span> in level flight</div>
+  </section>
+
+  <section>
+    <h3><i style="background:var(--ground);box-shadow:0 0 8px var(--ground)"></i>Ground layer</h3>
+    <div class="copy">Altitude below 450 m</div>
+    <div class="count"><b id="n-ground">–</b><span>aircraft</span></div>
+  </section>
+  <div id="zoom" class="panel">
+    <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+    <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+    <button id="zoom-reset" title="Reset view" aria-label="Reset view">⟲</button>
+    <button id="play" class="icon" title="Loading audio…" aria-label="Loading audio" disabled>▶</button>
+  </div>
+</aside>
+
+<div id="now" aria-live="polite"><svg id="now-icon" viewBox="0 0 24 24" aria-hidden="true"></svg><div id="now-flight"></div><div id="now-route"></div></div>
+<div id="tip"></div>
+
+<script src="sonar.js"></script>
+</body>
+</html>
