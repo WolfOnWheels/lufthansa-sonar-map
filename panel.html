@@ -19,18 +19,21 @@
   #info h2 { font-size: 22px; color: #fff; line-height: 0; }
   #info h2 img { height: 40px; width: auto; display: block; }
   #info header .copy { margin-top: 20px; }
+  /* rule under the altitude line in each layer box */
+  #info section > .copy { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  #info .count.ruled { padding-bottom: 18px; border-bottom: 1px solid var(--border); }
   #info .copy { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
   #info section { display: flex; flex-direction: column; }
   #info h3 { font-size: 22px; color: #fff; display: flex; align-items: center; gap: 10px; }
   #info h3 i { width: 12px; height: 12px; border-radius: 50%; flex: none; }
-  #info .count { margin-top: 10px; display: flex; align-items: baseline; gap: 8px; }
+  #info .count { margin-top: 18px; display: flex; align-items: baseline; gap: 8px; }
   #info .count b { font-family: "Lufthansa Head", sans-serif; font-weight: 100; font-size: 72px; line-height: .9; color: #fff;
     font-variant-numeric: tabular-nums; }
   #info .count span { font-size: 13px; color: var(--muted); }
-  #info .rows { margin-top: 10px; display: grid; grid-template-columns: 22px 1fr auto; gap: 8px 10px; align-items: center; font-size: 14px; }
+  #info .rows { margin-top: 18px; display: grid; grid-template-columns: 22px 1fr auto; gap: 16px 10px; align-items: center; font-size: 14px; }
   #info .rows svg { width: 22px; height: 22px; color: #fff; }
   #info .rows b { font-weight: 400; color: #fff; font-size: 18px; font-variant-numeric: tabular-nums; }
-  #info .note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  #info .note { font-size: 12px; color: var(--muted); margin-top: 14px; }
   #info #err { color: #ff8080; font-size: 12px; }
   /* zoom + play controls: a horizontal bar attached right under the info boxes, same width */
   #zoom { position: static; flex: none; width: 100%; height: var(--bar-h); box-sizing: border-box;
@@ -58,7 +61,7 @@
   <section>
     <h3><i style="background:var(--between);box-shadow:0 0 8px var(--between)"></i>Between layer</h3>
     <div class="copy">Altitude 450 m to 10,000 m</div>
-    <div class="count"><b id="n-between">–</b><span>aircraft in total</span></div>
+    <div class="count ruled"><b id="n-between">–</b><span>aircraft in total</span></div>
     <div class="rows">
       <svg viewBox="0 0 24 24" data-icon="dep" aria-hidden="true"></svg><span>Ascending</span><b id="n-asc">–</b>
       <svg viewBox="0 0 24 24" data-icon="arr" aria-hidden="true"></svg><span>Descending</span><b id="n-desc">–</b>
