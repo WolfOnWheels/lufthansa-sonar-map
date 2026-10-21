@@ -14,9 +14,11 @@
     display: flex; flex-direction: column; gap: 8px; overflow-y: auto;
     font-family: "Lufthansa Text", sans-serif; font-weight: 400; color: var(--text); }
   #info > header, #info > section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 14px 18px; box-sizing: border-box; }
+    padding: 19px 23px; box-sizing: border-box; }
   #info h2, #info h3 { font-weight: 700; margin: 0; }
-  #info h2 { font-size: 22px; color: #fff; }
+  #info h2 { font-size: 22px; color: #fff; line-height: 0; }
+  #info h2 img { height: 40px; width: auto; display: block; }
+  #info header .copy { margin-top: 20px; }
   #info .copy { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
   #info section { display: flex; flex-direction: column; }
   #info h3 { font-size: 22px; color: #fff; display: flex; align-items: center; gap: 10px; }
@@ -42,7 +44,7 @@
 
 <aside id="info" aria-label="Flight information">
   <header>
-    <h2>Lufthansa live flights</h2>
+    <h2><img src="img/lh-logo-white.svg" alt="Lufthansa"></h2>
     <div class="copy"><span id="count">–</span> aircraft airborne · updated <span id="updated">–</span></div>
     <div id="err"></div>
   </header>
