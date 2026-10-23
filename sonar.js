@@ -178,9 +178,9 @@ load();
 // Two background loops (Ground, Cruising) play continuously. Eight one-shot sounds are
 // triggered by what the flight data shows each plane doing between two API updates:
 //   takeoff   below 450 m and climbing (once per flight)
-//   ascend1   crosses 450 m going up       descend3  crosses 10,000 m going down
+//   ascend1   crosses 450 m going up       descend1  crosses 10,000 m going down
 //   ascend2   crosses 4,500 m going up     descend2  crosses 5,500 m going down
-//   ascend3   crosses 10,000 m going up    descend1  crosses 450 m going down
+//   ascend3   crosses 10,000 m going up    descend3  crosses 450 m going down
 //   landing   below 450 m and descending (once per flight)
 // Crossings are found by comparing a flight's altitude with its previous reading; each one is
 // played at the point in the following minute that matches where between the two readings
@@ -191,15 +191,15 @@ const EVENTS = {
   ascend1:  { src: "audio/ascend1.wav",  dir: "dep" },
   ascend2:  { src: "audio/ascend2.wav",  dir: "dep" },
   ascend3:  { src: "audio/ascend3.wav",  dir: "dep" },
-  descend3: { src: "audio/descend3.wav", dir: "arr" },
-  descend2: { src: "audio/descend2.wav", dir: "arr" },
   descend1: { src: "audio/descend1.wav", dir: "arr" },
+  descend2: { src: "audio/descend2.wav", dir: "arr" },
+  descend3: { src: "audio/descend3.wav", dir: "arr" },
   landing:  { src: "audio/landing.wav",  dir: "arr" },
 };
 // [event, threshold (m), direction]: up = previous below and now at/above; down = previous above and now at/below
 const CROSSINGS = [
   ["ascend1", 450, "up"], ["ascend2", 4500, "up"], ["ascend3", 10000, "up"],
-  ["descend3", 10000, "down"], ["descend2", 5500, "down"], ["descend1", 450, "down"],
+  ["descend1", 10000, "down"], ["descend2", 5500, "down"], ["descend3", 450, "down"],
 ];
 const EVENT_PEAK_DB = -12; // event sounds are played back peaking at −12 dBFS unless EVENTS sets peakDb
 const RING_FADE_IN_MS = 90;
