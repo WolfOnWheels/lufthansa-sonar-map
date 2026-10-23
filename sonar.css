@@ -72,6 +72,7 @@ button:disabled { opacity: .5; cursor: default; }
 #now.show { opacity: 1; }
 #now-icon { grid-row: 1; width: .8em; height: .8em; align-self: center; }
 #now-route { grid-column: 2; margin-top: .2em; white-space: nowrap; } /* size set in JS to match a 5-char flight number */
+#now-alt { grid-column: 2; margin-top: .45em; font-size: .3em; letter-spacing: .02em; white-space: nowrap; }
 
 #tip { position: fixed; pointer-events: none; background: rgba(6,16,40,.95); border: 1px solid var(--plane);
   border-radius: 6px; padding: 6px 9px; font-size: 12px; display: none; white-space: nowrap; z-index: 10; }

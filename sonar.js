@@ -187,14 +187,14 @@ load();
 // the threshold was crossed, so events spread out instead of all firing at each update.
 const LOOPS = { ground: "audio/ground.wav", air: "audio/air.wav" };
 const EVENTS = {
-  takeoff:  { src: "audio/takeoff.wav",  dir: "dep" },
+  takeoff:  { src: "audio/takeoff.wav",  dir: "dep", peakDb: -22 }, // quieter than the other events
   ascend1:  { src: "audio/ascend1.wav",  dir: "dep" },
   ascend2:  { src: "audio/ascend2.wav",  dir: "dep" },
   ascend3:  { src: "audio/ascend3.wav",  dir: "dep" },
   descend3: { src: "audio/descend3.wav", dir: "arr" },
   descend2: { src: "audio/descend2.wav", dir: "arr" },
   descend1: { src: "audio/descend1.wav", dir: "arr" },
-  landing:  { src: "audio/landing.wav",  dir: "arr", peakDb: -22 }, // quieter than the other events
+  landing:  { src: "audio/landing.wav",  dir: "arr" },
 };
 // [event, threshold (m), direction]: up = previous below and now at/above; down = previous above and now at/below
 const CROSSINGS = [
@@ -456,6 +456,7 @@ function showFlight(d, dir) {
     $("now-icon").innerHTML = ICONS[dir] || "";
     $("now-flight").textContent = d.flight_iata || d.flight_icao;
     $("now-route").textContent = `${d.dep_iata || "???"}:${d.arr_iata || "???"}`;
+    setText("now-alt", d.alt != null ? `${Math.round(d.alt).toLocaleString("en-US")} m` : "");
     document.fonts.ready.then(fitRoute);
     nowEl.classList.add("show");
   }, nowEl.textContent.trim() ? 200 : 0);
