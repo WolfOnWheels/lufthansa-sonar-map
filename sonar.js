@@ -187,14 +187,16 @@ load();
 // the threshold was crossed, so events spread out instead of all firing at each update.
 const LOOPS = { ground: "audio/ground.wav", air: "audio/air.wav" };
 const EVENTS = {
-  takeoff:  { src: "audio/takeoff.wav",  dir: "dep", peakDb: -22 }, // quieter than the other events
+  // takeoff/landing happen inside the Ground layer, where only the ground loop plays:
+  // they still flash a ring and show the flight, but have no sound (src: null)
+  takeoff:  { src: null, dir: "dep" },
   ascend1:  { src: "audio/ascend1.wav",  dir: "dep" },
   ascend2:  { src: "audio/ascend2.wav",  dir: "dep" },
   ascend3:  { src: "audio/ascend3.wav",  dir: "dep" },
   descend3: { src: "audio/descend3.wav", dir: "arr" },
   descend2: { src: "audio/descend2.wav", dir: "arr" },
   descend1: { src: "audio/descend1.wav", dir: "arr" },
-  landing:  { src: "audio/landing.wav",  dir: "arr" },
+  landing:  { src: null, dir: "arr" },
 };
 // [event, threshold (m), direction]: up = previous below and now at/above; down = previous above and now at/below
 const CROSSINGS = [
@@ -222,13 +224,13 @@ async function webAudioEngine() {
   const ctx = new AudioContext();
   const load = src => fetch(src).then(r => { if (!r.ok) throw new Error(`${src}: ${r.status}`); return r.arrayBuffer(); })
     .then(b => ctx.decodeAudioData(b));
-  const names = [...Object.keys(LOOPS), ...Object.keys(EVENTS)];
+  const names = [...Object.keys(LOOPS), ...Object.keys(EVENTS).filter(n => EVENTS[n].src)];
   const decoded = await Promise.all(names.map(n => load(LOOPS[n] || EVENTS[n].src)));
   const buffers = Object.fromEntries(names.map((n, i) => [n, decoded[i]]));
   // The event stems are mastered much quieter than the loops (the six tones peak around
   // −28 to −34 dBFS), so each event is normalised to the same peak level to stand out.
   const peakOf = b => { let m = 0; for (let c = 0; c < b.numberOfChannels; c++) for (const v of b.getChannelData(c)) m = Math.max(m, Math.abs(v)); return m; };
-  const eventGain = Object.fromEntries(Object.entries(EVENTS).map(([n, e]) =>
+  const eventGain = Object.fromEntries(Object.entries(EVENTS).filter(([, e]) => e.src).map(([n, e]) =>
     [n, 10 ** ((e.peakDb ?? EVENT_PEAK_DB) / 20) / Math.max(peakOf(buffers[n]), 1e-4)]));
   const gains = {};
   for (const l of LAYERS) {
@@ -285,7 +287,7 @@ async function mediaElementEngine() {
   }));
   await Promise.all(Object.values(loops).map(ready));
   // preload the event sounds once so later plays start immediately
-  for (const e of Object.values(EVENTS)) Object.assign(new Audio(e.src), { preload: "auto" }).load();
+  for (const e of Object.values(EVENTS)) if (e.src) Object.assign(new Audio(e.src), { preload: "auto" }).load();
   const master = loops.ground;
   return {
     async play() { await Promise.all(Object.values(loops).map(el => el.play())); },
@@ -405,7 +407,7 @@ function scheduleFlightEvents(list) {
 }
 
 function fireEvent({ key, name }) {
-  if (engine?.playing()) engine.trigger(name);
+  if (EVENTS[name].src && engine?.playing()) engine.trigger(name);
   const node = gPlanes.selectAll("g.plane").filter(d => keyOf(d) === key).node();
   if (!node) return;
   // takeoff/landing rings use the Ground colour, the six climb/descent tones the Ascending/Descending colour
