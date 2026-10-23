@@ -45,10 +45,9 @@ svg#map:active { cursor: grabbing; }
   0%, 100% { opacity: .08; transform: scale(.92); }
   50%      { opacity: .5;  transform: scale(1.02); }
 }
-/* Between layer: rings, hidden until a note of the Between track fires */
-.plane .ring { display: none; opacity: 0; fill: color-mix(in srgb, var(--plane) 25%, transparent);
+/* Rings: hidden until the plane triggers a takeoff/climb/descent/landing sound */
+.plane .ring { opacity: 0; fill: color-mix(in srgb, var(--plane) 25%, transparent);
   stroke: var(--plane); stroke-width: 0.7; }
-.plane.between .ring { display: inline; }
 
 .panel { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
 button { background: var(--ocean); color: var(--text); border: 1px solid var(--border); border-radius: 5px;

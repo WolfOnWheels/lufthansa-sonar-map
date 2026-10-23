@@ -7,14 +7,15 @@ if (new URLSearchParams(location.search).has("display")) document.body.classList
 
 const API_KEY = "a67be567-6409-4e50-906a-f3e5721e6e14";
 const API_URL = `https://airlabs.co/api/v9/flights?api_key=${API_KEY}&airline_iata=LH`;
-// Note: free AirLabs plan = 1000 requests/month; 60 s polling uses ~60 requests/hour.
-const REFRESH_MS = 60 * 1000;
+// Seconds between API requests: 60 by default, or a page's <body data-refresh="…">.
+// AirLabs developer plan: 25,000 requests/month (60 s ≈ 60/hour, 15 s ≈ 240/hour per open page).
+const REFRESH_MS = (+document.body.dataset.refresh || 60) * 1000;
 
 // Altitude layers, each with its own audio track
 const LAYERS = [
-  { id: "ground",  label: "Ground layer",  range: "0 – 450 m",       max: 450,      color: "var(--ground)",  src: "audio/ground.wav" },
-  { id: "between", label: "Between layer", range: "450 – 10,000 m",  max: 10000,    color: "var(--between)", src: "audio/between.wav" },
-  { id: "air",     label: "Air layer",     range: "above 10,000 m",  max: Infinity, color: "var(--air)",     src: "audio/air.wav" },
+  { id: "ground",  label: "Ground",               range: "0 – 450 m",      max: 450,      color: "var(--ground)" },
+  { id: "between", label: "Ascending/Descending", range: "450 – 10,000 m", max: 10000,    color: "var(--between)" },
+  { id: "air",     label: "Cruising",             range: "above 10,000 m", max: Infinity, color: "var(--air)" },
 ];
 const layerOf = d => LAYERS.find(l => (d.alt || 0) < l.max);
 // Vertical speed from AirLabs; small values count as level flight
@@ -158,6 +159,7 @@ async function load() {
     showError("");
     updateStats();
     joinFlights();
+    scheduleFlightEvents(flights);
   } catch (e) {
     showError("Error: " + e.message);
   }
@@ -173,20 +175,39 @@ setInterval(renderPositions, 2000); // smooth movement between API polls
 load();
 
 // ---------- Audio ----------
-// The three layer tracks start together and loop in sync.
-// Note onsets in the Between track are detected from its waveform; on each onset one random
-// on-screen Between-layer plane flashes its ring and is shown at the top left.
+// Two background loops (Ground, Cruising) play continuously. Eight one-shot sounds are
+// triggered by what the flight data shows each plane doing between two API updates:
+//   takeoff   below 450 m and climbing (once per flight)
+//   ascend1   crosses 450 m going up       descend3  crosses 10,000 m going down
+//   ascend2   crosses 4,500 m going up     descend2  crosses 5,500 m going down
+//   ascend3   crosses 10,000 m going up    descend1  crosses 450 m going down
+//   landing   below 450 m and descending (once per flight)
+// Crossings are found by comparing a flight's altitude with its previous reading; each one is
+// played at the point in the following minute that matches where between the two readings
+// the threshold was crossed, so events spread out instead of all firing at each update.
+const LOOPS = { ground: "audio/ground.wav", air: "audio/air.wav" };
+const EVENTS = {
+  takeoff:  { src: "audio/takeoff.wav",  dir: "dep" },
+  ascend1:  { src: "audio/ascend1.wav",  dir: "dep" },
+  ascend2:  { src: "audio/ascend2.wav",  dir: "dep" },
+  ascend3:  { src: "audio/ascend3.wav",  dir: "dep" },
+  descend3: { src: "audio/descend3.wav", dir: "arr" },
+  descend2: { src: "audio/descend2.wav", dir: "arr" },
+  descend1: { src: "audio/descend1.wav", dir: "arr" },
+  landing:  { src: "audio/landing.wav",  dir: "arr" },
+};
+// [event, threshold (m), direction]: up = previous below and now at/above; down = previous above and now at/below
+const CROSSINGS = [
+  ["ascend1", 450, "up"], ["ascend2", 4500, "up"], ["ascend3", 10000, "up"],
+  ["descend3", 10000, "down"], ["descend2", 5500, "down"], ["descend1", 450, "down"],
+];
+const EVENT_PEAK = 10 ** (-12 / 20); // every event sound is played back peaking at −12 dBFS
 const RING_FADE_IN_MS = 90;
 const RING_FADE_OUT_MS = 2200;
 const RING_GROW = 3;
 
-// Note times of the Between track, used when the page is opened straight from disk (file://),
-// where browsers block reading the audio data so the notes can't be detected on the fly.
-const BETWEEN_ONSETS_FALLBACK = [
-  { t: 1.25, dir: "dep" }, { t: 6.0, dir: "arr" }, { t: 19.33, dir: "dep" }, { t: 33.07, dir: "arr" }, { t: 37.41, dir: "dep" },
-];
-
-let onsets = [], loopLen = 0, lastPos = 0;
+// Volumes: Ground slider → ground loop, Cruising slider → air loop,
+// Ascending/Descending slider ("between") → all eight event sounds
 const volumes = Object.fromEntries(LAYERS.map(l => [l.id, 0.8]));
 
 // Per-track volume sliders (index.html only)
@@ -196,127 +217,86 @@ d3.select("#tracks").selectAll("div.track").data([...LAYERS].reverse()).join("di
   <output id="v-${l.id}">80</output>
   <input type="range" min="0" max="100" value="80" id="vol-${l.id}" aria-label="${l.label} volume">`);
 
-function detectOnsets(buffer) {
-  // 10 ms peak envelope; an onset is a rise above 20% of the track peak,
-  // re-armed once the level has fallen back below 5%.
-  const hop = Math.round(buffer.sampleRate / 100);
-  const chans = [...Array(buffer.numberOfChannels)].map((_, i) => buffer.getChannelData(i));
-  const env = [];
-  for (let i = 0; i < buffer.length; i += hop) {
-    let m = 0;
-    for (const c of chans) for (let j = i; j < Math.min(i + hop, buffer.length); j++) m = Math.max(m, Math.abs(c[j]));
-    env.push(m);
-  }
-  const peak = Math.max(...env);
-  const out = [];
-  let armed = true;
-  env.forEach((v, i) => {
-    if (armed && v > 0.2 * peak) { out.push(i * hop / buffer.sampleRate); armed = false; }
-    else if (!armed && v < 0.05 * peak) armed = true;
-  });
-  return out;
-}
-
-// Label each note arrival or departure by pitch. The autocorrelation peak (over ~85 ms
-// after the attack) reads the D note lower than the F, but the D is heard as the higher
-// note, so the lower measured pitch is departure.
-function classifyNotes(buffer, times) {
-  const x = buffer.getChannelData(0), sr = buffer.sampleRate, N = 4096;
-  const pitches = times.map(t => {
-    const s = Math.floor((t + 0.08) * sr);
-    let best = -Infinity, lag = 1;
-    for (let L = Math.floor(sr / 1200); L <= Math.floor(sr / 40); L++) {
-      let c = 0;
-      for (let i = 0; i < N - L; i += 2) c += x[s + i] * x[s + i + L];
-      if (c > best) { best = c; lag = L; }
-    }
-    return sr / lag;
-  });
-  const mid = (Math.min(...pitches) + Math.max(...pitches)) / 2;
-  return times.map((t, i) => ({ t, dir: pitches[i] > mid ? "arr" : "dep", hz: Math.round(pitches[i]) }));
-}
-
-// Web Audio engine (served over http/https): sample-accurate sync, notes detected from the file.
+// Web Audio engine (served over http/https): loops start together; events are short buffer sources.
 async function webAudioEngine() {
   const ctx = new AudioContext();
-  const buffers = await Promise.all(LAYERS.map(l =>
-    fetch(l.src).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
-      .then(b => ctx.decodeAudioData(b))));
+  const load = src => fetch(src).then(r => { if (!r.ok) throw new Error(`${src}: ${r.status}`); return r.arrayBuffer(); })
+    .then(b => ctx.decodeAudioData(b));
+  const names = [...Object.keys(LOOPS), ...Object.keys(EVENTS)];
+  const decoded = await Promise.all(names.map(n => load(LOOPS[n] || EVENTS[n].src)));
+  const buffers = Object.fromEntries(names.map((n, i) => [n, decoded[i]]));
+  // The event stems are mastered much quieter than the loops (the six tones peak around
+  // −28 to −34 dBFS), so each event is normalised to the same peak level to stand out.
+  const peakOf = b => { let m = 0; for (let c = 0; c < b.numberOfChannels; c++) for (const v of b.getChannelData(c)) m = Math.max(m, Math.abs(v)); return m; };
+  const eventGain = Object.fromEntries(Object.keys(EVENTS).map(n => [n, EVENT_PEAK / Math.max(peakOf(buffers[n]), 1e-4)]));
   const gains = {};
   for (const l of LAYERS) {
     gains[l.id] = ctx.createGain();
     gains[l.id].gain.value = volumes[l.id];
     gains[l.id].connect(ctx.destination);
   }
-  loopLen = Math.min(...buffers.map(b => b.duration));
-  const betweenBuf = buffers[LAYERS.findIndex(l => l.id === "between")];
-  onsets = classifyNotes(betweenBuf, detectOnsets(betweenBuf));
-  let startAt = null;
+  let started = false;
   return {
     async play() {
       // schedule first, then resume: if the browser holds audio back until a click,
-      // the tracks simply start (still in sync) once the context is allowed to run
-      if (startAt === null) {
-        startAt = ctx.currentTime + 0.15;
-        LAYERS.forEach((l, i) => {
+      // the loops simply start once the context is allowed to run
+      if (!started) {
+        started = true;
+        const at = ctx.currentTime + 0.15;
+        for (const n of Object.keys(LOOPS)) {
           const src = ctx.createBufferSource();
-          src.buffer = buffers[i];
+          src.buffer = buffers[n];
           src.loop = true;
-          src.loopEnd = loopLen;
-          src.connect(gains[l.id]);
-          src.start(startAt);
-        });
+          src.connect(gains[n]);
+          src.start(at);
+        }
       }
       await ctx.resume();
     },
     pause: () => ctx.suspend(),
-    playing: () => startAt !== null && ctx.state === "running",
+    playing: () => started && ctx.state === "running",
     onChange(cb) { ctx.addEventListener("statechange", cb); },
-    position() {
-      if (startAt === null) return null;
-      const t = ctx.currentTime - startAt - (ctx.outputLatency || ctx.baseLatency || 0);
-      return t < 0 ? null : t % loopLen;
+    trigger(name) {
+      const src = ctx.createBufferSource();
+      const level = ctx.createGain();
+      src.buffer = buffers[name];
+      level.gain.value = eventGain[name];
+      src.connect(level).connect(gains.between);
+      src.start();
     },
     setVolume: (id, v) => gains[id].gain.setTargetAtTime(v, ctx.currentTime, 0.02),
-    tick() {},
   };
 }
 
-// Fallback engine (file://): three <audio> elements kept in step with the Between track.
+// Fallback engine (file://, where pages can't read audio data): <audio> elements.
 async function mediaElementEngine() {
-  const els = Object.fromEntries(LAYERS.map(l => {
-    const el = new Audio(l.src);
-    el.loop = true;
-    el.preload = "auto";
-    el.volume = volumes[l.id];
-    return [l.id, el];
-  }));
-  await Promise.all(Object.values(els).map(el => new Promise((ok, fail) => {
+  const ready = el => new Promise((ok, fail) => {
     if (el.readyState >= 4) return ok();
     el.addEventListener("canplaythrough", ok, { once: true });
     el.addEventListener("error", () => fail(new Error(`can't load ${el.src.split("/").pop()}`)), { once: true });
-  })));
-  const master = els.between;
-  loopLen = master.duration;
-  onsets = BETWEEN_ONSETS_FALLBACK;
-  let lastResync = 0;
+  });
+  const loops = Object.fromEntries(Object.entries(LOOPS).map(([n, src]) => {
+    const el = new Audio(src);
+    el.loop = true;
+    el.preload = "auto";
+    el.volume = volumes[n];
+    return [n, el];
+  }));
+  await Promise.all(Object.values(loops).map(ready));
+  // preload the event sounds once so later plays start immediately
+  for (const e of Object.values(EVENTS)) Object.assign(new Audio(e.src), { preload: "auto" }).load();
+  const master = loops.ground;
   return {
-    async play() {
-      for (const el of Object.values(els)) if (el !== master && Math.abs(el.currentTime - master.currentTime) > 0.04) el.currentTime = master.currentTime;
-      await Promise.all(Object.values(els).map(el => el.play()));
-    },
-    pause() { for (const el of Object.values(els)) el.pause(); },
+    async play() { await Promise.all(Object.values(loops).map(el => el.play())); },
+    pause() { for (const el of Object.values(loops)) el.pause(); },
     playing: () => !master.paused,
     onChange(cb) { master.addEventListener("play", cb); master.addEventListener("pause", cb); },
-    position: () => master.currentTime,
-    setVolume: (id, v) => { els[id].volume = v; },
-    tick() {
-      // nudge the other tracks back into step if they drift (skip right around the loop point)
-      const now = performance.now(), t = master.currentTime;
-      if (now - lastResync < 1000 || t < 0.5 || t > loopLen - 0.5) return;
-      lastResync = now;
-      for (const el of Object.values(els)) if (el !== master && Math.abs(el.currentTime - t) > 0.04) el.currentTime = t;
+    trigger(name) {
+      const el = new Audio(EVENTS[name].src);
+      el.volume = volumes.between;
+      el.play().catch(() => {});
     },
+    setVolume: (id, v) => { if (loops[id]) loops[id].volume = v; },
   };
 }
 
@@ -330,7 +310,6 @@ const COMPACT = playBtn.classList.contains("icon");
     playBtn.disabled = false;
     engine.onChange(updatePlayState);
     updatePlayState();
-    requestAnimationFrame(syncLoop);
     autoplay();
   })
   .catch(e => {
@@ -357,7 +336,6 @@ function updatePlayState() {
 }
 
 function startPlayback() {
-  lastPos = engine.position() ?? 0;
   return engine.play().then(updatePlayState, () => {}); // blocked until a click/tap/key press
 }
 
@@ -397,32 +375,48 @@ window.addEventListener("message", e => {
   if (cmd === "state") postState();
 });
 
-function syncLoop() {
-  requestAnimationFrame(syncLoop);
-  if (!engine.playing()) return;
-  engine.tick();
-  const pos = engine.position();
-  if (pos === null) return;
-  const crossed = pos >= lastPos
-    ? onsets.filter(o => o.t > lastPos && o.t <= pos)
-    : onsets.filter(o => o.t > lastPos || o.t <= pos); // wrapped around the loop
-  lastPos = pos;
-  if (crossed.length) flashBetweenRings(crossed[crossed.length - 1].dir);
+// ---------- Flight events from the data ----------
+const lastSeen = new Map();   // flight key → { alt, updated } from the previous API update
+const playedOnce = new Set(); // "key:takeoff" / "key:landing", so those play once per flight
+const keyOf = d => d.hex || d.flight_icao;
+
+function scheduleFlightEvents(list) {
+  const pending = [];
+  for (const f of list) {
+    const key = keyOf(f), alt = f.alt || 0, prev = lastSeen.get(key);
+    if (prev && f.updated > prev.updated) {
+      const span = Math.min(REFRESH_MS, (f.updated - prev.updated) * 1000);
+      for (const [name, th, way] of CROSSINGS) {
+        const crossed = way === "up" ? prev.alt < th && alt >= th : prev.alt > th && alt <= th;
+        if (crossed) pending.push({ key, name, delay: span * (th - prev.alt) / (alt - prev.alt) });
+      }
+    }
+    if (alt < 450) {
+      const once = climbOf(f) === "asc" ? "takeoff" : climbOf(f) === "desc" ? "landing" : null;
+      if (once && !playedOnce.has(`${key}:${once}`)) {
+        playedOnce.add(`${key}:${once}`);
+        pending.push({ key, name: once, delay: Math.random() * REFRESH_MS * 0.5 });
+      }
+    }
+    lastSeen.set(key, { alt, updated: f.updated });
+  }
+  for (const ev of pending) setTimeout(() => fireEvent(ev), Math.max(0, ev.delay));
 }
 
-function flashBetweenRings(dir) {
-  const visible = gPlanes.selectAll("g.plane.between").nodes().filter(n => {
-    const b = n.getBoundingClientRect();
-    return b.right > 0 && b.bottom > 0 && b.left < innerWidth && b.top < innerHeight;
-  });
-  if (!visible.length) return;
-  const node = visible[Math.floor(Math.random() * visible.length)];
+function fireEvent({ key, name }) {
+  if (engine?.playing()) engine.trigger(name);
+  const node = gPlanes.selectAll("g.plane").filter(d => keyOf(d) === key).node();
+  if (!node) return;
+  if (name !== "takeoff" && name !== "landing") flashRing(node); // rings only for the six climb/descent tones
+  showFlight(d3.select(node).datum(), EVENTS[name].dir);
+}
+
+function flashRing(node) {
   node.querySelector(".ring").animate([
     { opacity: 0, transform: "scale(1)", easing: "ease-out" },
     { opacity: 1, transform: "scale(1.05)", offset: RING_FADE_IN_MS / (RING_FADE_IN_MS + RING_FADE_OUT_MS), easing: "ease-in-out" },
     { opacity: 0, transform: `scale(${RING_GROW})` },
   ], { duration: RING_FADE_IN_MS + RING_FADE_OUT_MS });
-  showFlight(d3.select(node).datum(), dir);
 }
 
 // ---------- Flight info (top left) ----------

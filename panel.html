@@ -42,7 +42,7 @@
   #zoom button + button { border-top: 0; border-left: 1px solid var(--border); }
 </style>
 </head>
-<body>
+<body data-refresh="15">
 <svg id="map"></svg>
 
 <aside id="info" aria-label="Flight information">
@@ -53,13 +53,13 @@
   </header>
 
   <section>
-    <h3><i style="background:var(--air);box-shadow:0 0 8px var(--air)"></i>Air layer</h3>
+    <h3><i style="background:var(--air);box-shadow:0 0 8px var(--air)"></i>Cruising</h3>
     <div class="copy">Cruising altitude above 10,000 m</div>
     <div class="count"><b id="n-air">–</b><span>aircraft</span></div>
   </section>
 
   <section>
-    <h3><i style="background:var(--between);box-shadow:0 0 8px var(--between)"></i>Between layer</h3>
+    <h3><i style="background:var(--between);box-shadow:0 0 8px var(--between)"></i>Ascending/Descending</h3>
     <div class="copy">Altitude 450 m to 10,000 m</div>
     <div class="count ruled"><b id="n-between">–</b><span>aircraft in total</span></div>
     <div class="rows">
@@ -70,7 +70,7 @@
   </section>
 
   <section>
-    <h3><i style="background:var(--ground);box-shadow:0 0 8px var(--ground)"></i>Ground layer</h3>
+    <h3><i style="background:var(--ground);box-shadow:0 0 8px var(--ground)"></i>Ground</h3>
     <div class="copy">Altitude below 450 m</div>
     <div class="count"><b id="n-ground">–</b><span>aircraft</span></div>
   </section>
