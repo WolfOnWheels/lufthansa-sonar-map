@@ -90,8 +90,8 @@ d3.select("#zoom-reset").on("click", () => svg.transition().duration(400).call(z
 
 // ---------- Flights ----------
 const PLANE = "M0,-5 L1,-1.5 L5,1 L5,2 L1,0.8 L0.7,3.5 L2,4.6 L2,5.3 L0,4.8 L-2,5.3 L-2,4.6 L-0.7,3.5 L-1,0.8 L-5,2 L-5,1 L-1,-1.5 Z";
-// Between-layer ring radius by altitude (m): 450 m → 9 px, 10,000 m → 42 px
-const ringR = alt => 1.5 * 6 + 1.5 * 22 * Math.sqrt(Math.min(Math.max(alt || 0, 0), 10000) / 10000);
+// Ring radius by altitude (m): 0 m → 11 px, 10,000 m and above → 53 px
+const ringR = alt => 1.25 * (1.5 * 6 + 1.5 * 22 * Math.sqrt(Math.min(Math.max(alt || 0, 0), 10000) / 10000));
 const GLOW_R = 25;
 const tip = d3.select("#tip");
 let flights = [];
@@ -187,16 +187,14 @@ load();
 // the threshold was crossed, so events spread out instead of all firing at each update.
 const LOOPS = { ground: "audio/ground.wav", air: "audio/air.wav" };
 const EVENTS = {
-  // takeoff/landing happen inside the Ground layer, where only the ground loop plays:
-  // they still flash a ring and show the flight, but have no sound (src: null)
-  takeoff:  { src: null, dir: "dep" },
+  takeoff:  { src: "audio/takeoff.wav",  dir: "dep", peakDb: -22 }, // quieter than the other events
   ascend1:  { src: "audio/ascend1.wav",  dir: "dep" },
   ascend2:  { src: "audio/ascend2.wav",  dir: "dep" },
   ascend3:  { src: "audio/ascend3.wav",  dir: "dep" },
   descend3: { src: "audio/descend3.wav", dir: "arr" },
   descend2: { src: "audio/descend2.wav", dir: "arr" },
   descend1: { src: "audio/descend1.wav", dir: "arr" },
-  landing:  { src: null, dir: "arr" },
+  landing:  { src: "audio/landing.wav",  dir: "arr" },
 };
 // [event, threshold (m), direction]: up = previous below and now at/above; down = previous above and now at/below
 const CROSSINGS = [
