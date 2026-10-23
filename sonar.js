@@ -194,14 +194,14 @@ const EVENTS = {
   descend3: { src: "audio/descend3.wav", dir: "arr" },
   descend2: { src: "audio/descend2.wav", dir: "arr" },
   descend1: { src: "audio/descend1.wav", dir: "arr" },
-  landing:  { src: "audio/landing.wav",  dir: "arr" },
+  landing:  { src: "audio/landing.wav",  dir: "arr", peakDb: -22 }, // quieter than the other events
 };
 // [event, threshold (m), direction]: up = previous below and now at/above; down = previous above and now at/below
 const CROSSINGS = [
   ["ascend1", 450, "up"], ["ascend2", 4500, "up"], ["ascend3", 10000, "up"],
   ["descend3", 10000, "down"], ["descend2", 5500, "down"], ["descend1", 450, "down"],
 ];
-const EVENT_PEAK = 10 ** (-12 / 20); // every event sound is played back peaking at −12 dBFS
+const EVENT_PEAK_DB = -12; // event sounds are played back peaking at −12 dBFS unless EVENTS sets peakDb
 const RING_FADE_IN_MS = 90;
 const RING_FADE_OUT_MS = 2200;
 const RING_GROW = 3;
@@ -228,7 +228,8 @@ async function webAudioEngine() {
   // The event stems are mastered much quieter than the loops (the six tones peak around
   // −28 to −34 dBFS), so each event is normalised to the same peak level to stand out.
   const peakOf = b => { let m = 0; for (let c = 0; c < b.numberOfChannels; c++) for (const v of b.getChannelData(c)) m = Math.max(m, Math.abs(v)); return m; };
-  const eventGain = Object.fromEntries(Object.keys(EVENTS).map(n => [n, EVENT_PEAK / Math.max(peakOf(buffers[n]), 1e-4)]));
+  const eventGain = Object.fromEntries(Object.entries(EVENTS).map(([n, e]) =>
+    [n, 10 ** ((e.peakDb ?? EVENT_PEAK_DB) / 20) / Math.max(peakOf(buffers[n]), 1e-4)]));
   const gains = {};
   for (const l of LAYERS) {
     gains[l.id] = ctx.createGain();
