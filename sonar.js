@@ -176,15 +176,11 @@ load();
 
 // ---------- Audio ----------
 // Two background loops (Ground, Cruising) play continuously. Eight one-shot sounds are
-// triggered by what the flight data shows each plane doing between two API updates:
-//   takeoff   below 450 m and climbing (once per flight)
-//   ascend1   crosses 450 m going up       descend1  crosses 10,000 m going down
-//   ascend2   crosses 4,500 m going up     descend2  crosses 5,500 m going down
-//   ascend3   crosses 10,000 m going up    descend3  crosses 450 m going down
-//   landing   below 450 m and descending (once per flight)
-// Crossings are found by comparing a flight's altitude with its previous reading; each one is
-// played at the point in the following minute that matches where between the two readings
-// the threshold was crossed, so events spread out instead of all firing at each update.
+// triggered when a plane climbs or descends through an altitude band (see BANDS), once per
+// flight and band. A plane counts as being in the band if a reading falls inside it, or if it
+// passed through the band between two readings. The sound is played at the point in the
+// following update interval that matches where between the two readings it entered the band,
+// so events spread out instead of all firing at each update.
 const LOOPS = { ground: "audio/ground.wav", air: "audio/air.wav" };
 const EVENTS = {
   takeoff:  { src: "audio/takeoff.wav",  dir: "dep", peakDb: -22 }, // quieter than the other events
@@ -196,10 +192,16 @@ const EVENTS = {
   descend3: { src: "audio/descend3.wav", dir: "arr" },
   landing:  { src: "audio/landing.wav",  dir: "arr" },
 };
-// [event, threshold (m), direction]: up = previous below and now at/above; down = previous above and now at/below
-const CROSSINGS = [
-  ["ascend1", 450, "up"], ["ascend2", 4500, "up"], ["ascend3", 10000, "up"],
-  ["descend1", 10000, "down"], ["descend2", 5500, "down"], ["descend3", 450, "down"],
+// [event, band low (m), band high (m), direction]
+const BANDS = [
+  ["takeoff",     0,   300, "up"],
+  ["ascend1",   450,   900, "up"],
+  ["ascend2",  4500,  5500, "up"],
+  ["ascend3",  9500, 10000, "up"],
+  ["descend1", 10000, 10500, "down"],
+  ["descend2",  4500,  5500, "down"],
+  ["descend3",   450,   900, "down"],
+  ["landing",     0,   300, "down"],
 ];
 const EVENT_PEAK_DB = -12; // event sounds are played back peaking at −12 dBFS unless EVENTS sets peakDb
 const RING_FADE_IN_MS = 90;
@@ -378,30 +380,35 @@ window.addEventListener("message", e => {
 
 // ---------- Flight events from the data ----------
 const lastSeen = new Map();   // flight key → { alt, updated } from the previous API update
-const playedOnce = new Set(); // "key:takeoff" / "key:landing", so those play once per flight
+const playedOnce = new Set(); // "key:event", so each event plays once per flight
 const keyOf = d => d.hex || d.flight_icao;
 
 function scheduleFlightEvents(list) {
   const pending = [];
   for (const f of list) {
     const key = keyOf(f), alt = f.alt || 0, prev = lastSeen.get(key);
-    if (prev && f.updated > prev.updated) {
-      const span = Math.min(REFRESH_MS, (f.updated - prev.updated) * 1000);
-      for (const [name, th, way] of CROSSINGS) {
-        const crossed = way === "up" ? prev.alt < th && alt >= th : prev.alt > th && alt <= th;
-        if (crossed) pending.push({ key, name, delay: span * (th - prev.alt) / (alt - prev.alt) });
-      }
-    }
-    if (alt < 450) {
-      const once = climbOf(f) === "asc" ? "takeoff" : climbOf(f) === "desc" ? "landing" : null;
-      if (once && !playedOnce.has(`${key}:${once}`)) {
-        playedOnce.add(`${key}:${once}`);
-        pending.push({ key, name: once, delay: Math.random() * REFRESH_MS * 0.5 });
+    const fresh = prev && f.updated > prev.updated;
+    // Direction: the altitude change since the last reading when there is one, else the reported climb rate
+    const change = fresh ? alt - prev.alt : 0;
+    const way = Math.abs(change) >= 10 ? (change > 0 ? "up" : "down")
+      : climbOf(f) === "asc" ? "up" : climbOf(f) === "desc" ? "down" : null;
+    if (way) {
+      // Altitude range covered since the last reading (just the current reading if there is none)
+      const from = fresh ? prev.alt : alt;
+      const lo = Math.min(from, alt), hi = Math.max(from, alt);
+      const span = fresh ? Math.min(REFRESH_MS, (f.updated - prev.updated) * 1000) : 0;
+      for (const [name, bLo, bHi, bWay] of BANDS) {
+        if (bWay !== way || hi < bLo || lo > bHi || playedOnce.has(`${key}:${name}`)) continue;
+        playedOnce.add(`${key}:${name}`);
+        // when the plane entered the band, as a share of the interval between the readings
+        const entry = way === "up" ? bLo : bHi;
+        const share = alt === from ? 0 : Math.min(1, Math.max(0, (entry - from) / (alt - from)));
+        pending.push({ key, name, delay: span ? span * share : Math.random() * 3000 });
       }
     }
     lastSeen.set(key, { alt, updated: f.updated });
   }
-  for (const ev of pending) setTimeout(() => fireEvent(ev), Math.max(0, ev.delay));
+  for (const ev of pending) setTimeout(() => fireEvent(ev), ev.delay);
 }
 
 function fireEvent({ key, name }) {
