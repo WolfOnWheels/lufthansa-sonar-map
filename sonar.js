@@ -408,12 +408,16 @@ function fireEvent({ key, name }) {
   if (engine?.playing()) engine.trigger(name);
   const node = gPlanes.selectAll("g.plane").filter(d => keyOf(d) === key).node();
   if (!node) return;
-  if (name !== "takeoff" && name !== "landing") flashRing(node); // rings only for the six climb/descent tones
+  // takeoff/landing rings use the Ground colour, the six climb/descent tones the Ascending/Descending colour
+  flashRing(node, name === "takeoff" || name === "landing" ? "var(--ground)" : "var(--between)");
   showFlight(d3.select(node).datum(), EVENTS[name].dir);
 }
 
-function flashRing(node) {
-  node.querySelector(".ring").animate([
+function flashRing(node, color) {
+  const ring = node.querySelector(".ring");
+  ring.style.stroke = color;
+  ring.style.fill = `color-mix(in srgb, ${color} 25%, transparent)`;
+  ring.animate([
     { opacity: 0, transform: "scale(1)", easing: "ease-out" },
     { opacity: 1, transform: "scale(1.05)", offset: RING_FADE_IN_MS / (RING_FADE_IN_MS + RING_FADE_OUT_MS), easing: "ease-in-out" },
     { opacity: 0, transform: `scale(${RING_GROW})` },
