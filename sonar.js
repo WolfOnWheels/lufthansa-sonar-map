@@ -17,7 +17,9 @@ const LAYERS = [
   { id: "between", label: "Ascending/Descending", range: "450 – 10,000 m", max: 10000,    color: "var(--between)" },
   { id: "air",     label: "Cruising",             range: "above 10,000 m", max: Infinity, color: "var(--air)" },
 ];
-const layerOf = d => LAYERS.find(l => (d.alt || 0) < l.max);
+// Some flights come without an altitude (alt: null); they keep their last known altitude if there is
+// one (see load), otherwise they belong to no layer (null) and are left out of the layer counts.
+const layerOf = d => d.alt == null ? null : LAYERS.find(l => d.alt < l.max);
 // Vertical speed from AirLabs; small values count as level flight
 const climbOf = d => (d.v_speed || 0) > 1 ? "asc" : (d.v_speed || 0) < -1 ? "desc" : "level";
 
@@ -116,7 +118,7 @@ function joinFlights() {
         .html(`<b style="color:#ffd400">${d.flight_iata || d.flight_icao}</b> ${d.dep_iata || "?"} → ${d.arr_iata || "?"}<br>
                ${d.aircraft_icao || ""} ${d.reg_number || ""}<br>
                Alt ${d.alt?.toLocaleString() ?? "–"} m · ${d.speed ?? "–"} km/h · Hdg ${Math.round(d.dir ?? 0)}°<br>
-               ${layerOf(d).label}`);
+               ${layerOf(d)?.label ?? "Altitude unknown"}`);
     })
     .on("mouseleave", () => tip.style("display", "none"));
   enter.append("circle").attr("class", "glow").attr("r", GLOW_R)
@@ -126,7 +128,7 @@ function joinFlights() {
   enter.append("path").attr("class", "icon").attr("d", PLANE);
   enter.append("text").attr("y", 3);
   sel.merge(enter).each(function (d) {
-    const g = d3.select(this).attr("class", `plane ${layerOf(d).id}`);
+    const g = d3.select(this).attr("class", `plane ${layerOf(d)?.id ?? "unknown"}`);
     g.select(".ring").attr("r", ringR(d.alt));
     g.select(".icon").attr("transform", `rotate(${d.dir || 0}) scale(0.9)`);
     g.select("text").attr("x", 7).text(d.flight_iata || d.flight_icao);
@@ -146,7 +148,7 @@ function updateStats() {
   setText("count", flights.length);
   setText("updated", new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
   for (const l of LAYERS) setText(`n-${l.id}`, flights.filter(f => layerOf(f) === l).length);
-  const between = flights.filter(f => layerOf(f).id === "between");
+  const between = flights.filter(f => layerOf(f)?.id === "between");
   for (const c of ["asc", "desc", "level"]) setText(`n-${c}`, between.filter(f => climbOf(f) === c).length);
 }
 
@@ -156,6 +158,11 @@ async function load() {
     const json = await res.json();
     if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
     flights = (json.response || []).filter(f => f.status === "en-route" && f.lat != null && f.lng != null);
+    for (const f of flights) {
+      if (f.alt != null) continue;
+      const last = lastSeen.get(keyOf(f));
+      if (last) Object.assign(f, { alt: last.alt, altIsLastKnown: true });
+    }
     showError("");
     updateStats();
     joinFlights();
@@ -383,11 +390,19 @@ const lastSeen = new Map();   // flight key → { alt, updated } from the previo
 const playedOnce = new Set(); // "key:event", so each event plays once per flight
 const keyOf = d => d.hex || d.flight_icao;
 
+const MAX_GAP_S = 3 * REFRESH_MS / 1000; // readings further apart than this aren't compared
+const MAX_VERTICAL_MS = 60;              // m/s; faster altitude changes are data glitches
+
 function scheduleFlightEvents(list) {
   const pending = [];
   for (const f of list) {
-    const key = keyOf(f), alt = f.alt || 0, prev = lastSeen.get(key);
-    const fresh = prev && f.updated > prev.updated;
+    if (f.alt == null || f.altIsLastKnown) continue; // no new altitude reading this update
+    const key = keyOf(f), alt = f.alt, prev = lastSeen.get(key);
+    const dt = prev ? f.updated - prev.updated : 0;
+    lastSeen.set(key, { alt, updated: f.updated });
+    if (prev && dt <= 0) continue; // same reading as last time
+    if (prev && Math.abs(alt - prev.alt) / dt > MAX_VERTICAL_MS) continue;
+    const fresh = prev && dt <= MAX_GAP_S;
     // Direction: the altitude change since the last reading when there is one, else the reported climb rate
     const change = fresh ? alt - prev.alt : 0;
     const way = Math.abs(change) >= 10 ? (change > 0 ? "up" : "down")
@@ -397,16 +412,19 @@ function scheduleFlightEvents(list) {
       const from = fresh ? prev.alt : alt;
       const lo = Math.min(from, alt), hi = Math.max(from, alt);
       const span = fresh ? Math.min(REFRESH_MS, (f.updated - prev.updated) * 1000) : 0;
+      // A plane plays at most one sound per update: if it passed through several bands,
+      // only the last one it entered sounds (the others are marked as done).
+      let latest = null;
       for (const [name, bLo, bHi, bWay] of BANDS) {
         if (bWay !== way || hi < bLo || lo > bHi || playedOnce.has(`${key}:${name}`)) continue;
         playedOnce.add(`${key}:${name}`);
         // when the plane entered the band, as a share of the interval between the readings
         const entry = way === "up" ? bLo : bHi;
         const share = alt === from ? 0 : Math.min(1, Math.max(0, (entry - from) / (alt - from)));
-        pending.push({ key, name, delay: span ? span * share : Math.random() * 3000 });
+        if (!latest || share >= latest.share) latest = { name, share };
       }
+      if (latest) pending.push({ key, name: latest.name, delay: span ? span * latest.share : Math.random() * 3000 });
     }
-    lastSeen.set(key, { alt, updated: f.updated });
   }
   for (const ev of pending) setTimeout(() => fireEvent(ev), ev.delay);
 }
@@ -467,7 +485,8 @@ function showFlight(d, dir) {
     $("now-icon").innerHTML = ICONS[dir] || "";
     $("now-flight").textContent = d.flight_iata || d.flight_icao;
     $("now-route").textContent = `${d.dep_iata || "???"}:${d.arr_iata || "???"}`;
-    setText("now-alt", d.alt != null ? `${Math.round(d.alt).toLocaleString("en-US")} m` : "");
+    setText("now-alt", d.alt == null ? "Altitude unknown"
+      : `${d.altIsLastKnown ? "≈ " : ""}${Math.round(d.alt).toLocaleString("en-US")} m`);
     document.fonts.ready.then(fitRoute);
     nowEl.classList.add("show");
   }, nowEl.textContent.trim() ? 200 : 0);
